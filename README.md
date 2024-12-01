@@ -22,19 +22,39 @@ MigrationDB is a robust database migration tool that enables streaming data tran
 
 ## Installation
 
-### On MacOS
+### Using Docker
+
+Clone the repository and build the Docker image:
 
 ```bash
-brew install migrationdb
+git clone https://github.com/Qovery/migration-db.git
+cd migration-db
+docker build -f Dockerfile . --tag migrationdb
 ```
 
-### On Linux
+### Using Docker for Migrations
 
-*Coming soon*
+```bash
+# Basic migration
+docker run -it --rm migrationdb \
+    --source postgresql://user:pass@source:5432/dbname \
+    --target postgresql://user:pass@target:5432/dbname
 
-### On Windows
+# Stream to local file
+docker run -it --rm migrationdb \
+    --source postgresql://user:pass@source:5432/dbname \
+    --stdout > dump.sql
 
-*Coming soon*
+# Validate connections
+docker run -it --rm migrationdb validate \
+    --source postgresql://user:pass@source:5432/dbname \
+    --target postgresql://user:pass@target:5432/dbname
+
+# Using custom network for database access
+docker run -it --rm --network=my-network migrationdb \
+    --source postgresql://user:pass@source-db:5432/dbname \
+    --target postgresql://user:pass@target-db:5432/dbname
+```
 
 ## Usage
 
