@@ -30,15 +30,15 @@ jobs:
           mkdir -p build
           
           # Build for MacOS (both ARM and AMD64)
-          GOOS=darwin GOARCH=arm64 go build -o build/app-darwin-arm64 main.go
-          GOOS=darwin GOARCH=amd64 go build -o build/app-darwin-amd64 main.go
+          GOOS=darwin GOARCH=arm64 go build -o build/migrationdb-darwin-arm64 main.go
+          GOOS=darwin GOARCH=amd64 go build -o build/migrationdb-darwin-amd64 main.go
           
           # Build for Linux
-          GOOS=linux GOARCH=amd64 go build -o build/app-linux-amd64 main.go
-          GOOS=linux GOARCH=arm64 go build -o build/app-linux-arm64 main.go
+          GOOS=linux GOARCH=amd64 go build -o build/migrationdb-linux-amd64 main.go
+          GOOS=linux GOARCH=arm64 go build -o build/migrationdb-linux-arm64 main.go
           
           # Build for Windows
-          GOOS=windows GOARCH=amd64 go build -o build/app-windows-amd64.exe main.go
+          GOOS=windows GOARCH=amd64 go build -o build/migrationdb-windows-amd64.exe main.go
           
           # Create ZIP archives for each binary
           cd build
