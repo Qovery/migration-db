@@ -28,10 +28,16 @@ RUN apt update \
     && apt install -y default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install MigrationDB
-RUN wget -O migrationdb.zip https://github.com/Qovery/migration-db/releases/download/v0.2/migrationdb-linux-arm64.zip \
+# Download and install MigrationDB based on architecture
+RUN ARCH=$(uname -m) && \
+    case ${ARCH} in \
+        x86_64) ARCH_NAME="amd64" ;; \
+        aarch64) ARCH_NAME="arm64" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac && \
+    wget -O migrationdb.zip https://github.com/Qovery/migration-db/releases/download/v0.2/migrationdb-linux-${ARCH_NAME}.zip \
     && unzip migrationdb.zip \
-    && mv migrationdb-linux-arm64 /usr/local/bin/migrationdb \
+    && mv migrationdb-linux-${ARCH_NAME} /usr/local/bin/migrationdb \
     && chmod +x /usr/local/bin/migrationdb \
     && rm migrationdb.zip
 
