@@ -1,0 +1,58 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build for all platforms
+        run: |
+          # Create build directory
+          mkdir -p build
+          
+          # Build for MacOS (both ARM and AMD64)
+          GOOS=darwin GOARCH=arm64 go build -o build/app-darwin-arm64 main.go
+          GOOS=darwin GOARCH=amd64 go build -o build/app-darwin-amd64 main.go
+          
+          # Build for Linux
+          GOOS=linux GOARCH=amd64 go build -o build/app-linux-amd64 main.go
+          GOOS=linux GOARCH=arm64 go build -o build/app-linux-arm64 main.go
+          
+          # Build for Windows
+          GOOS=windows GOARCH=amd64 go build -o build/app-windows-amd64.exe main.go
+          
+          # Create ZIP archives for each binary
+          cd build
+          for file in *; do
+            zip "${file}.zip" "$file"
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            build/*.zip
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
