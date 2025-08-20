@@ -71,6 +71,29 @@ migrationdb --source postgresql://user:pass@source:5432/dbname \
 migrationdb --source postgresql://user:pass@source:5432/dbname --stdout > dump.sql
 ```
 
+### Pass custom dump arguments
+
+You can pass additional flags to the underlying dumper (pg_dump, mysqldump, mongodump) using --dump-arg multiple times. Examples:
+
+```bash
+# Exclude a schema and a table
+migrationdb \
+  --source postgresql://user:pass@source:5432/dbname \
+  --target postgresql://user:pass@target:5432/dbname \
+  --dump-arg=--exclude-schema=analytics \
+  --dump-arg=--exclude-table=public.temp_data
+
+# Dump only the public schema in plain format to stdout
+migrationdb \
+  --source postgresql://user:pass@source:5432/dbname \
+  --stdout \
+  --dump-arg=--schema=public > dump.sql
+```
+
+Notes:
+- The tool sets some safe defaults (e.g., --no-owner, --no-privileges, and selects custom or plain format depending on mode). Your custom flags are appended after defaults so they can override them if needed.
+- Connection string or URI is provided to the underlying dumper (pg_dump/mysqldump/mongodump) as appropriate.
+
 ### Stream and Compress
 
 ```bash
@@ -104,6 +127,8 @@ migrationdb --source postgresql://user:pass@source:5432/dbname \
 | `--skip-verify`       | Skip verification after migration            | false   |
 | `--verify-chunk-size` | Chunk size in bytes for verification         | 10MB    |
 | `--skip-tls-verify`   | Skip TLS certificate verification            | false   |
+| `--dump-arg`          | Additional argument for underlying dumper (repeatable) | -       |
+| `--restore-arg`       | Additional argument for underlying restorer (repeatable) | -       |
 
 ## Commands
 

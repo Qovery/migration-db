@@ -22,7 +22,7 @@ func NewManager(cfg *config.Config, logger *config.Logger) *Manager {
 
 func (m *Manager) Migrate(ctx context.Context) error {
 	// Create source dumper
-	dumper, err := CreateDumper(m.config.SourceType, m.config.SourceConn, m.config.StdoutMode)
+	dumper, err := CreateDumper(m.config.SourceType, m.config.SourceConn, m.config.StdoutMode, m.config.DumpArgs)
 	if err != nil {
 		return fmt.Errorf("failed to create dumper: %w", err)
 	}
@@ -34,7 +34,7 @@ func (m *Manager) Migrate(ctx context.Context) error {
 	}
 
 	// Create target restorer
-	restorer, err := CreateRestorer(m.config.TargetType, m.config.TargetConn)
+	restorer, err := CreateRestorer(m.config.TargetType, m.config.TargetConn, m.config.RestoreArgs)
 	if err != nil {
 		return fmt.Errorf("failed to create restorer: %w", err)
 	}
