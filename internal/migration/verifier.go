@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"data-migration/internal/config"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -63,8 +64,8 @@ func NewDatabaseVerifier(sourceDumper, targetDumper Dumper, opts ...VerifierOpti
 }
 
 // compareReaders compares two io.Reader streams chunk by chunk
-func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io.Reader) (bool, error) {
-	fmt.Printf("DEBUG: Starting comparison of readers")
+func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io.Reader, logger *config.Logger) (bool, error) {
+	logger.Infof("DEBUG: Starting comparison of readers")
 	sourceChunk := make([]byte, v.chunkSize)
 	targetChunk := make([]byte, v.chunkSize)
 
@@ -75,11 +76,11 @@ func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("DEBUG: Comparison cancelled due to context")
+			logger.Infof("DEBUG: Comparison cancelled due to context")
 			return false, ctx.Err()
 		default:
 			chunkCount++
-			fmt.Printf("DEBUG: Reading chunk #%d", chunkCount)
+			logger.Infof("DEBUG: Reading chunk #%d", chunkCount)
 
 			// Read chunks from both sources
 			sourceN, sourceErr := io.ReadFull(source, sourceChunk)
@@ -88,17 +89,17 @@ func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io
 			totalSourceBytes += sourceN
 			totalTargetBytes += targetN
 
-			fmt.Printf("DEBUG: Chunk #%d - Source read: %d bytes (err: %v), Target read: %d bytes (err: %v)",
+			logger.Infof("DEBUG: Chunk #%d - Source read: %d bytes (err: %v), Target read: %d bytes (err: %v)",
 				chunkCount, sourceN, sourceErr, targetN, targetErr)
-			fmt.Printf("DEBUG: Total bytes so far - Source: %d, Target: %d", totalSourceBytes, totalTargetBytes)
+			logger.Infof("DEBUG: Total bytes so far - Source: %d, Target: %d", totalSourceBytes, totalTargetBytes)
 
 			// Handle read results
 			if sourceErr != nil && sourceErr != io.EOF && !errors.Is(sourceErr, io.ErrUnexpectedEOF) {
-				fmt.Printf("DEBUG: Error reading source: %v", sourceErr)
+				logger.Infof("DEBUG: Error reading source: %v", sourceErr)
 				return false, fmt.Errorf("error reading source: %w", sourceErr)
 			}
 			if targetErr != nil && targetErr != io.EOF && !errors.Is(targetErr, io.ErrUnexpectedEOF) {
-				fmt.Printf("DEBUG: Error reading target: %v", targetErr)
+				logger.Infof("DEBUG: Error reading target: %v", targetErr)
 				return false, fmt.Errorf("error reading target: %w", targetErr)
 			}
 
@@ -106,37 +107,37 @@ func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io
 			switch v.sourceDumper.GetType() {
 			case Postgres:
 				if !bytes.Equal(sourceChunk[:sourceN], targetChunk[:targetN]) {
-					fmt.Printf("DEBUG: Postgres chunks don't match (source: %d bytes, target: %d bytes)", sourceN, targetN)
+					logger.Infof("DEBUG: Postgres chunks don't match (source: %d bytes, target: %d bytes)", sourceN, targetN)
 					return false, nil
 				}
 			case MySQL:
 				normalizedSource, err := normalizeMySQLDump(sourceChunk[:sourceN])
 				if err != nil {
-					fmt.Printf("DEBUG: Error normalizing MySQL source: %v", err)
+					logger.Infof("DEBUG: Error normalizing MySQL source: %v", err)
 					return false, err
 				}
 				normalizedTarget, err := normalizeMySQLDump(targetChunk[:targetN])
 				if err != nil {
-					fmt.Printf("DEBUG: Error normalizing MySQL target: %v", err)
+					logger.Infof("DEBUG: Error normalizing MySQL target: %v", err)
 					return false, err
 				}
 				if !bytes.Equal(normalizedSource, normalizedTarget) {
-					fmt.Printf("DEBUG: MySQL normalized chunks don't match")
+					logger.Infof("DEBUG: MySQL normalized chunks don't match")
 					return false, nil
 				}
 			case MongoDB:
 				normalizedSource, err := normalizeMongoDBDump(sourceChunk[:sourceN])
 				if err != nil {
-					fmt.Printf("DEBUG: Error normalizing MongoDB source: %v", err)
+					logger.Infof("DEBUG: Error normalizing MongoDB source: %v", err)
 					return false, err
 				}
 				normalizedTarget, err := normalizeMongoDBDump(targetChunk[:targetN])
 				if err != nil {
-					fmt.Printf("DEBUG: Error normalizing MongoDB target: %v", err)
+					logger.Infof("DEBUG: Error normalizing MongoDB target: %v", err)
 					return false, err
 				}
 				if !bytes.Equal(normalizedSource, normalizedTarget) {
-					fmt.Printf("DEBUG: MongoDB normalized chunks don't match")
+					logger.Infof("DEBUG: MongoDB normalized chunks don't match")
 					return false, nil
 				}
 			}
@@ -145,16 +146,16 @@ func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io
 			if sourceErr == io.EOF || errors.Is(sourceErr, io.ErrUnexpectedEOF) {
 				if targetErr == io.EOF || errors.Is(targetErr, io.ErrUnexpectedEOF) {
 					// Both streams ended
-					fmt.Printf("DEBUG: Both streams ended, final comparison result: %v", sourceN == targetN)
+					logger.Infof("DEBUG: Both streams ended, final comparison result: %v", sourceN == targetN)
 					return sourceN == targetN, nil
 				}
 				// Source ended but target didn't
-				fmt.Printf("DEBUG: Source ended but target didn't")
+				logger.Infof("DEBUG: Source ended but target didn't")
 				return false, nil
 			}
 			if targetErr == io.EOF || errors.Is(targetErr, io.ErrUnexpectedEOF) {
 				// Target ended but source didn't
-				fmt.Printf("DEBUG: Target ended but source didn't")
+				logger.Infof("DEBUG: Target ended but source didn't")
 				return false, nil
 			}
 		}
@@ -162,9 +163,9 @@ func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io
 }
 
 // VerifyContent performs verification of the migration by comparing dumps
-func (v *DatabaseVerifier) VerifyContent(ctx context.Context) error {
+func (v *DatabaseVerifier) VerifyContent(ctx context.Context, logger *config.Logger) error {
 	start := time.Now()
-	fmt.Printf("DEBUG: VerifyContent started at %v", start)
+	logger.Infof("DEBUG: VerifyContent started at %v", start)
 
 	// Create pipes for streaming the dumps
 	sourceReader, sourceWriter := io.Pipe()
@@ -178,72 +179,72 @@ func (v *DatabaseVerifier) VerifyContent(ctx context.Context) error {
 	// Start dumping source database
 	go func() {
 		defer sourceWriter.Close()
-		fmt.Printf("DEBUG: Source dump goroutine started at %v", time.Since(start))
+		logger.Infof("DEBUG: Source dump goroutine started at %v", time.Since(start))
 		err := v.sourceDumper.Dump(ctx, sourceWriter)
-		fmt.Printf("DEBUG: Source dump completed at %v with error: %v", time.Since(start), err)
+		logger.Infof("DEBUG: Source dump completed at %v with error: %v", time.Since(start), err)
 		sourceDumpErr <- err
 	}()
 
 	// Start dumping target database
 	go func() {
 		defer targetWriter.Close()
-		fmt.Printf("DEBUG: Target dump goroutine started at %v", time.Since(start))
+		logger.Infof("DEBUG: Target dump goroutine started at %v", time.Since(start))
 		err := v.targetDumper.Dump(ctx, targetWriter)
-		fmt.Printf("DEBUG: Target dump completed at %v with error: %v", time.Since(start), err)
+		logger.Infof("DEBUG: Target dump completed at %v with error: %v", time.Since(start), err)
 		targetDumpErr <- err
 	}()
 
 	// Start comparison in a goroutine
 	go func() {
-		fmt.Printf("DEBUG: Comparison goroutine started at %v", time.Since(start))
-		fmt.Printf("DEBUG: About to compare readers - sourceReader: %T, targetReader: %T", sourceReader, targetReader)
+		logger.Infof("DEBUG: Comparison goroutine started at %v", time.Since(start))
+		logger.Infof("DEBUG: About to compare readers - sourceReader: %T, targetReader: %T", sourceReader, targetReader)
 
 		// Check if readers are still open/valid
-		fmt.Printf("DEBUG: sourceReader state: %+v", sourceReader)
-		fmt.Printf("DEBUG: targetReader state: %+v", targetReader)
+		logger.Infof("DEBUG: sourceReader state: %+v", sourceReader)
+		logger.Infof("DEBUG: targetReader state: %+v", targetReader)
 
-		equal, err := v.compareReaders(ctx, sourceReader, targetReader)
+		equal, err := v.compareReaders(ctx, sourceReader, targetReader, logger)
 		if err != nil {
-			fmt.Printf("DEBUG: Comparison failed at %v with error: %v", time.Since(start), err)
+			logger.Infof("DEBUG: Comparison failed at %v with error: %v", time.Since(start), err)
 			compareErr <- err
 			return
 		}
 		if !equal {
-			fmt.Printf("DEBUG: Comparison completed at %v - databases do NOT match", time.Since(start))
-			compareErr <- fmt.Errorf("content verification failed: source and target databases do not match")
+			logger.Infof("DEBUG: Comparison completed at %v - databases do NOT match", time.Since(start))
+			compareErr <- fmt.Errorf("content verification failed: source and target databases do not match!")
 			return
 		}
-		fmt.Printf("DEBUG: Comparison completed at %v - databases match", time.Since(start))
+		logger.Infof("DEBUG: Comparison completed at %v - databases match", time.Since(start))
 		compareErr <- nil
 	}()
 
 	// Wait for all operations to complete or context to cancel
-	fmt.Printf("DEBUG: Entering select statement at %v", time.Since(start))
+	logger.Infof("DEBUG: Entering select statement at %v", time.Since(start))
 	select {
 	case <-ctx.Done():
-		fmt.Printf("DEBUG: Context cancelled at %v", time.Since(start))
+		logger.Infof("DEBUG: Context cancelled at %v", time.Since(start))
 		return ctx.Err()
 	case err := <-sourceDumpErr:
-		fmt.Printf("DEBUG: Received from sourceDumpErr at %v: %v", time.Since(start), err)
+		logger.Infof("DEBUG: Received from sourceDumpErr at %v: %v", time.Since(start), err)
 		if err != nil {
 			return fmt.Errorf("failed to dump source database: %w", err)
 		}
-		fmt.Printf("DEBUG: VerifyContent returning SUCCESS due to source dump completion at %v", time.Since(start))
+		logger.Infof("DEBUG: VerifyContent returning SUCCESS due to source dump completion at %v", time.Since(start))
 	case err := <-targetDumpErr:
-		fmt.Printf("DEBUG: Received from targetDumpErr at %v: %v", time.Since(start), err)
+		logger.Infof("DEBUG: Received from targetDumpErr at %v: %v", time.Since(start), err)
 		if err != nil {
 			return fmt.Errorf("failed to dump target database: %w", err)
 		}
-		fmt.Printf("DEBUG: VerifyContent returning SUCCESS due to target dump completion at %v", time.Since(start))
+		logger.Infof("DEBUG: VerifyContent returning SUCCESS due to target dump completion at %v", time.Since(start))
 	case err := <-compareErr:
-		fmt.Printf("DEBUG: Received from compareErr at %v: %v", time.Since(start), err)
+		logger.Infof("DEBUG: Received from compareErr at %v: %v", time.Since(start), err)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("DEBUG: VerifyContent returning SUCCESS due to comparison completion at %v", time.Since(start))
+		logger.Infof("DEBUG: VerifyContent returning SUCCESS due to comparison completion at %v", time.Since(start))
 	}
 
-	fmt.Printf("DEBUG: VerifyContent returning nil (success) at %v", time.Since(start))
+	logger.Infof("DEBUG: VerifyContent returning nil (success) at %v", time.Since(start))
 	return nil
 }
 
