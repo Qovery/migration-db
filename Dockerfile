@@ -1,5 +1,8 @@
 FROM debian:bookworm-slim
 
+# Add version argument
+ARG VERSION=v0.2
+
 # Set default PostgreSQL client version if not specified
 ENV POSTGRESQL_CLIENT_VERSION=15
 
@@ -30,7 +33,7 @@ RUN apt update && apt install -y \
            aarch64) ARCH_NAME="arm64" ;; \
            *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
        esac \
-    && wget -O migrationdb.zip https://github.com/Qovery/migration-db/releases/download/v0.2/migrationdb-linux-${ARCH_NAME}.zip \
+    && wget -O migrationdb.zip https://github.com/Qovery/migration-db/releases/download/${VERSION}/migrationdb-linux-${ARCH_NAME}.zip \
     && unzip migrationdb.zip \
     && mv migrationdb-linux-${ARCH_NAME} /usr/local/bin/migrationdb \
     && chmod +x /usr/local/bin/migrationdb \
