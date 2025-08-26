@@ -41,7 +41,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Test source connection
-	fmt.Println("Testing source connection...")
+	fmt.Println("Validate: Testing source connection...")
 	if err := TestConnection(sourceType, cfg.SourceConn, skipTLSVerify); err != nil {
 		return fmt.Errorf("source connection test failed: %v", err)
 	}
@@ -49,7 +49,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Test target connection if not in stdout mode
 	if !cfg.StdoutMode {
-		fmt.Println("\nTesting target connection...")
+		fmt.Println("\nValidate: Testing target connection...")
 		if err := TestConnection(sourceType, cfg.TargetConn, skipTLSVerify); err != nil {
 			return fmt.Errorf("target connection test failed: %v", err)
 		}

@@ -80,6 +80,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.get_version.outputs.VERSION }}
           tags: |
             ghcr.io/${{ steps.repo_name.outputs.REPO }}:latest
             ghcr.io/${{ steps.repo_name.outputs.REPO }}:${{ steps.get_version.outputs.VERSION }}
