@@ -1,3 +1,11 @@
+FROM golang:1.23-bookworm AS builder
+
+WORKDIR /app
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -o migrationdb main.go
+
 FROM debian:bookworm-slim
 
 # Add version argument
@@ -27,19 +35,12 @@ RUN apt update && apt install -y \
     && tar -xvf mongodb-database-tools-debian12-x86_64-100.10.0.tgz \
     && mv mongodb-database-tools-debian12-x86_64-100.10.0/bin/* /usr/local/bin/ \
     && rm -rf mongodb-database-tools-debian12-x86_64-100.10.0* \
-    && ARCH=$(uname -m) \
-    && case ${ARCH} in \
-           x86_64) ARCH_NAME="amd64" ;; \
-           aarch64) ARCH_NAME="arm64" ;; \
-           *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
-       esac \
-    && wget -O migrationdb.zip https://github.com/Qovery/migration-db/releases/download/${VERSION}/migrationdb-linux-${ARCH_NAME}.zip \
-    && unzip migrationdb.zip \
-    && mv migrationdb-linux-${ARCH_NAME} /usr/local/bin/migrationdb \
-    && chmod +x /usr/local/bin/migrationdb \
-    && rm migrationdb.zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy the binary from builder stage
+COPY --from=builder /app/migrationdb /usr/local/bin/migrationdb
+RUN chmod +x /usr/local/bin/migrationdb
 
 # Create an entrypoint script to handle version selection
 RUN echo '#!/bin/sh\n\
