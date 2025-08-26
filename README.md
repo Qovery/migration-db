@@ -3,7 +3,7 @@
 MigrationDB is a robust database migration tool that enables streaming data transfers between databases of the same type. It provides seamless migration capabilities for popular database systems, with built-in verification and flexible output options.
 
 > [!NOTE]  
-> If your database is large (around 50 GB or more), the migration process may take significant time, and MigrationDB might not be the most suitable tool. In such cases, consider using dedicated solutions provided by cloud providers, such as [AWS DMS](https://docs.aws.amazon.com/dms/latest/userguide/Welcome.html) 
+> If your database is large (>= 30 GB), the migration process may take significant time, and MigrationDB might not be the most suitable tool. In such cases, consider using dedicated solutions provided by cloud providers, such as [AWS DMS](https://docs.aws.amazon.com/dms/latest/userguide/Welcome.html).
 
 ## Supported Databases
 
