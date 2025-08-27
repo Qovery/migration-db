@@ -219,7 +219,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	setupSignalHandler(verifyCtx, verifyCancel, logger)
 
 	// Start verification
-	if err := verifier.VerifyContent(verifyCtx, logger); err != nil {
+	if err := verifier.VerifyContent(verifyCtx); err != nil {
 		if errors.Is(verifyCtx.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("verification timed out after %v", cfg.Timeout)
 		}

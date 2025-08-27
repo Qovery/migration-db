@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"data-migration/internal/config"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"time"
+	"regexp"
 )
 
 // Verifier defines the interface for database verification operations
@@ -64,80 +63,63 @@ func NewDatabaseVerifier(sourceDumper, targetDumper Dumper, opts ...VerifierOpti
 }
 
 // compareReaders compares two io.Reader streams chunk by chunk
-func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io.Reader, logger *config.Logger) (bool, error) {
-	logger.Infof("DEBUG: Starting comparison of readers")
+func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io.Reader) (bool, error) {
 	sourceChunk := make([]byte, v.chunkSize)
 	targetChunk := make([]byte, v.chunkSize)
-
-	totalSourceBytes := 0
-	totalTargetBytes := 0
-	chunkCount := 0
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Infof("DEBUG: Comparison cancelled due to context")
 			return false, ctx.Err()
 		default:
-			chunkCount++
-			logger.Infof("DEBUG: Reading chunk #%d", chunkCount)
-
 			// Read chunks from both sources
 			sourceN, sourceErr := io.ReadFull(source, sourceChunk)
 			targetN, targetErr := io.ReadFull(target, targetChunk)
 
-			totalSourceBytes += sourceN
-			totalTargetBytes += targetN
-
-			logger.Infof("DEBUG: Chunk #%d - Source read: %d bytes (err: %v), Target read: %d bytes (err: %v)",
-				chunkCount, sourceN, sourceErr, targetN, targetErr)
-			logger.Infof("DEBUG: Total bytes so far - Source: %d, Target: %d", totalSourceBytes, totalTargetBytes)
-
 			// Handle read results
 			if sourceErr != nil && sourceErr != io.EOF && !errors.Is(sourceErr, io.ErrUnexpectedEOF) {
-				logger.Infof("DEBUG: Error reading source: %v", sourceErr)
 				return false, fmt.Errorf("error reading source: %w", sourceErr)
 			}
 			if targetErr != nil && targetErr != io.EOF && !errors.Is(targetErr, io.ErrUnexpectedEOF) {
-				logger.Infof("DEBUG: Error reading target: %v", targetErr)
 				return false, fmt.Errorf("error reading target: %w", targetErr)
 			}
 
 			// Compare chunks based on database type
 			switch v.sourceDumper.GetType() {
 			case Postgres:
-				if !bytes.Equal(sourceChunk[:sourceN], targetChunk[:targetN]) {
-					logger.Infof("DEBUG: Postgres chunks don't match (source: %d bytes, target: %d bytes)", sourceN, targetN)
+				normalizedSource, err := normalizePostgresDump(sourceChunk[:sourceN])
+				if err != nil {
+					return false, fmt.Errorf("error normalizing source PostgreSQL dump: %w", err)
+				}
+				normalizedTarget, err := normalizePostgresDump(targetChunk[:targetN])
+				if err != nil {
+					return false, fmt.Errorf("error normalizing target PostgreSQL dump: %w", err)
+				}
+				if !bytes.Equal(normalizedSource, normalizedTarget) {
 					return false, nil
 				}
 			case MySQL:
 				normalizedSource, err := normalizeMySQLDump(sourceChunk[:sourceN])
 				if err != nil {
-					logger.Infof("DEBUG: Error normalizing MySQL source: %v", err)
 					return false, err
 				}
 				normalizedTarget, err := normalizeMySQLDump(targetChunk[:targetN])
 				if err != nil {
-					logger.Infof("DEBUG: Error normalizing MySQL target: %v", err)
 					return false, err
 				}
 				if !bytes.Equal(normalizedSource, normalizedTarget) {
-					logger.Infof("DEBUG: MySQL normalized chunks don't match")
 					return false, nil
 				}
 			case MongoDB:
 				normalizedSource, err := normalizeMongoDBDump(sourceChunk[:sourceN])
 				if err != nil {
-					logger.Infof("DEBUG: Error normalizing MongoDB source: %v", err)
 					return false, err
 				}
 				normalizedTarget, err := normalizeMongoDBDump(targetChunk[:targetN])
 				if err != nil {
-					logger.Infof("DEBUG: Error normalizing MongoDB target: %v", err)
 					return false, err
 				}
 				if !bytes.Equal(normalizedSource, normalizedTarget) {
-					logger.Infof("DEBUG: MongoDB normalized chunks don't match")
 					return false, nil
 				}
 			}
@@ -146,16 +128,13 @@ func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io
 			if sourceErr == io.EOF || errors.Is(sourceErr, io.ErrUnexpectedEOF) {
 				if targetErr == io.EOF || errors.Is(targetErr, io.ErrUnexpectedEOF) {
 					// Both streams ended
-					logger.Infof("DEBUG: Both streams ended, final comparison result: %v", sourceN == targetN)
 					return sourceN == targetN, nil
 				}
 				// Source ended but target didn't
-				logger.Infof("DEBUG: Source ended but target didn't")
 				return false, nil
 			}
 			if targetErr == io.EOF || errors.Is(targetErr, io.ErrUnexpectedEOF) {
 				// Target ended but source didn't
-				logger.Infof("DEBUG: Target ended but source didn't")
 				return false, nil
 			}
 		}
@@ -163,10 +142,7 @@ func (v *DatabaseVerifier) compareReaders(ctx context.Context, source, target io
 }
 
 // VerifyContent performs verification of the migration by comparing dumps
-func (v *DatabaseVerifier) VerifyContent(ctx context.Context, logger *config.Logger) error {
-	start := time.Now()
-	logger.Infof("DEBUG: VerifyContent started at %v", start)
-
+func (v *DatabaseVerifier) VerifyContent(ctx context.Context) error {
 	// Create pipes for streaming the dumps
 	sourceReader, sourceWriter := io.Pipe()
 	targetReader, targetWriter := io.Pipe()
@@ -179,72 +155,62 @@ func (v *DatabaseVerifier) VerifyContent(ctx context.Context, logger *config.Log
 	// Start dumping source database
 	go func() {
 		defer sourceWriter.Close()
-		logger.Infof("DEBUG: Source dump goroutine started at %v", time.Since(start))
 		err := v.sourceDumper.Dump(ctx, sourceWriter)
-		logger.Infof("DEBUG: Source dump completed at %v with error: %v", time.Since(start), err)
 		sourceDumpErr <- err
 	}()
 
 	// Start dumping target database
 	go func() {
 		defer targetWriter.Close()
-		logger.Infof("DEBUG: Target dump goroutine started at %v", time.Since(start))
 		err := v.targetDumper.Dump(ctx, targetWriter)
-		logger.Infof("DEBUG: Target dump completed at %v with error: %v", time.Since(start), err)
 		targetDumpErr <- err
 	}()
 
 	// Start comparison in a goroutine
 	go func() {
-		logger.Infof("DEBUG: Comparison goroutine started at %v", time.Since(start))
-		logger.Infof("DEBUG: About to compare readers - sourceReader: %T, targetReader: %T", sourceReader, targetReader)
-
-		// Check if readers are still open/valid
-		logger.Infof("DEBUG: sourceReader state: %+v", sourceReader)
-		logger.Infof("DEBUG: targetReader state: %+v", targetReader)
-
-		equal, err := v.compareReaders(ctx, sourceReader, targetReader, logger)
+		equal, err := v.compareReaders(ctx, sourceReader, targetReader)
 		if err != nil {
-			logger.Infof("DEBUG: Comparison failed at %v with error: %v", time.Since(start), err)
 			compareErr <- err
 			return
 		}
 		if !equal {
-			logger.Infof("DEBUG: Comparison completed at %v - databases do NOT match", time.Since(start))
-			compareErr <- fmt.Errorf("content verification failed: source and target databases do not match!")
+			compareErr <- fmt.Errorf("content verification failed: source and target databases do not match")
 			return
 		}
-		logger.Infof("DEBUG: Comparison completed at %v - databases match", time.Since(start))
 		compareErr <- nil
 	}()
 
-	// Wait for all operations to complete or context to cancel
-	logger.Infof("DEBUG: Entering select statement at %v", time.Since(start))
-	select {
-	case <-ctx.Done():
-		logger.Infof("DEBUG: Context cancelled at %v", time.Since(start))
-		return ctx.Err()
-	case err := <-sourceDumpErr:
-		logger.Infof("DEBUG: Received from sourceDumpErr at %v: %v", time.Since(start), err)
-		if err != nil {
-			return fmt.Errorf("failed to dump source database: %w", err)
+	// Wait for all operations to complete - corrected logic
+	var sourceDumpError, targetDumpError, compareError error
+	completedOperations := 0
+
+	for completedOperations < 3 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-sourceDumpErr:
+			sourceDumpError = err
+			completedOperations++
+		case err := <-targetDumpErr:
+			targetDumpError = err
+			completedOperations++
+		case err := <-compareErr:
+			compareError = err
+			completedOperations++
 		}
-		logger.Infof("DEBUG: VerifyContent returning SUCCESS due to source dump completion at %v", time.Since(start))
-	case err := <-targetDumpErr:
-		logger.Infof("DEBUG: Received from targetDumpErr at %v: %v", time.Since(start), err)
-		if err != nil {
-			return fmt.Errorf("failed to dump target database: %w", err)
-		}
-		logger.Infof("DEBUG: VerifyContent returning SUCCESS due to target dump completion at %v", time.Since(start))
-	case err := <-compareErr:
-		logger.Infof("DEBUG: Received from compareErr at %v: %v", time.Since(start), err)
-		if err != nil {
-			return err
-		}
-		logger.Infof("DEBUG: VerifyContent returning SUCCESS due to comparison completion at %v", time.Since(start))
 	}
 
-	logger.Infof("DEBUG: VerifyContent returning nil (success) at %v", time.Since(start))
+	// Check for errors in order of importance
+	if sourceDumpError != nil {
+		return fmt.Errorf("failed to dump source database: %w", sourceDumpError)
+	}
+	if targetDumpError != nil {
+		return fmt.Errorf("failed to dump target database: %w", targetDumpError)
+	}
+	if compareError != nil {
+		return compareError
+	}
+
 	return nil
 }
 
@@ -274,6 +240,54 @@ func (v *DatabaseVerifier) GetChecksum(ctx context.Context) (string, error) {
 	}
 
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// normalizePostgresDump normalizes a PostgreSQL dump chunk for comparison
+func normalizePostgresDump(chunk []byte) ([]byte, error) {
+	lines := bytes.Split(chunk, []byte("\n"))
+	var normalized [][]byte
+
+	// Regex patterns for dynamic content in PostgreSQL dumps
+	timestampRegex := regexp.MustCompile(`^\-\- Dump(ed)?\s+(on|at|by)\s+.+`)
+	versionRegex := regexp.MustCompile(`^\-\- PostgreSQL database dump.*`)
+	pgDumpVersionRegex := regexp.MustCompile(`^\-\- pg_dump version.*`)
+	startedOnRegex := regexp.MustCompile(`^\-\- Started on.*`)
+	completedOnRegex := regexp.MustCompile(`^\-\- Completed on.*`)
+	serverVersionRegex := regexp.MustCompile(`^\-\- Server version.*`)
+
+	for _, line := range lines {
+		lineStr := string(line)
+
+		// Skip lines with timestamps and version info
+		if bytes.HasPrefix(line, []byte("-- Dumped on")) ||
+			bytes.HasPrefix(line, []byte("-- Dumped by")) ||
+			bytes.HasPrefix(line, []byte("-- Started on")) ||
+			bytes.HasPrefix(line, []byte("-- Completed on")) ||
+			bytes.HasPrefix(line, []byte("-- PostgreSQL database dump")) ||
+			bytes.HasPrefix(line, []byte("-- pg_dump version")) ||
+			bytes.HasPrefix(line, []byte("-- Server version")) ||
+			timestampRegex.MatchString(lineStr) ||
+			versionRegex.MatchString(lineStr) ||
+			pgDumpVersionRegex.MatchString(lineStr) ||
+			startedOnRegex.MatchString(lineStr) ||
+			completedOnRegex.MatchString(lineStr) ||
+			serverVersionRegex.MatchString(lineStr) {
+			continue
+		}
+
+		// Skip empty comment lines that might contain variable spacing
+		if bytes.Equal(bytes.TrimSpace(line), []byte("--")) {
+			continue
+		}
+
+		// Normalize whitespace in SQL statements (optional - may help with formatting differences)
+		normalizedLine := bytes.TrimSpace(line)
+		if len(normalizedLine) > 0 {
+			normalized = append(normalized, normalizedLine)
+		}
+	}
+
+	return bytes.Join(normalized, []byte("\n")), nil
 }
 
 // normalizeMySQLDump normalizes a MySQL dump chunk for comparison
