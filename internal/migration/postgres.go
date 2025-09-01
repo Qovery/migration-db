@@ -11,12 +11,14 @@ import (
 type PostgresDumper struct {
 	connString      string
 	useCustomFormat bool
+	extraArgs       []string
 }
 
-func NewPostgresDumper(connString string, useCustomFormat bool) *PostgresDumper {
+func NewPostgresDumper(connString string, useCustomFormat bool, extraArgs []string) *PostgresDumper {
 	return &PostgresDumper{
 		connString:      connString,
 		useCustomFormat: useCustomFormat,
+		extraArgs:       extraArgs,
 	}
 }
 
@@ -39,6 +41,11 @@ func (d *PostgresDumper) Dump(ctx context.Context, w io.Writer) error {
 		args = append(args, "--format=plain")
 	}
 
+	// Append user-provided extra args after defaults to allow overriding
+	if len(d.extraArgs) > 0 {
+		args = append(args, d.extraArgs...)
+	}
+
 	args = append(args, d.connString)
 
 	cmd := exec.CommandContext(ctx, "pg_dump", args...)
@@ -55,10 +62,11 @@ func (d *PostgresDumper) Dump(ctx context.Context, w io.Writer) error {
 
 type PostgresRestorer struct {
 	connString string
+	extraArgs  []string
 }
 
-func NewPostgresRestorer(connString string) *PostgresRestorer {
-	return &PostgresRestorer{connString: connString}
+func NewPostgresRestorer(connString string, extraArgs []string) *PostgresRestorer {
+	return &PostgresRestorer{connString: connString, extraArgs: extraArgs}
 }
 
 func (r *PostgresRestorer) GetType() DatabaseType {
@@ -68,16 +76,22 @@ func (r *PostgresRestorer) GetType() DatabaseType {
 func (r *PostgresRestorer) Restore(ctx context.Context, reader io.Reader) error {
 	var stderr bytes.Buffer
 
-	cmd := exec.CommandContext(ctx, "pg_restore",
+	args := []string{
 		"--verbose",
-		"--no-owner",      // Add this to avoid permission issues
-		"--no-privileges", // Add this to avoid permission issues
+		"--no-owner",      // avoid permission issues
+		"--no-privileges", // avoid permission issues
 		"--clean",
 		"--if-exists",
 		"--no-comments",        // Optional: skip restoring comments
 		"--no-security-labels", // Optional: skip security labels
-		fmt.Sprintf("--dbname=%s", r.connString),
-	)
+	}
+	// Append user-provided extra args after defaults to allow overriding
+	if len(r.extraArgs) > 0 {
+		args = append(args, r.extraArgs...)
+	}
+	args = append(args, fmt.Sprintf("--dbname=%s", r.connString))
+
+	cmd := exec.CommandContext(ctx, "pg_restore", args...)
 
 	cmd.Stdin = reader
 	cmd.Stderr = &stderr

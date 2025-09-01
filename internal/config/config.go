@@ -17,6 +17,8 @@ type Config struct {
 	SkipVerification bool
 	VerifyChunkSize  int
 	SkipTLSVerify    bool
+	DumpArgs         []string
+	RestoreArgs      []string
 }
 
 func (c *Config) Validate() error {
