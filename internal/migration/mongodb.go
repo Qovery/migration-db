@@ -9,10 +9,11 @@ import (
 
 type MongoDBDumper struct {
 	connString string
+	extraArgs  []string
 }
 
-func NewMongoDBDumper(connString string) *MongoDBDumper {
-	return &MongoDBDumper{connString: connString}
+func NewMongoDBDumper(connString string, extraArgs []string) *MongoDBDumper {
+	return &MongoDBDumper{connString: connString, extraArgs: extraArgs}
 }
 
 func (d *MongoDBDumper) GetType() DatabaseType {
@@ -20,10 +21,14 @@ func (d *MongoDBDumper) GetType() DatabaseType {
 }
 
 func (d *MongoDBDumper) Dump(ctx context.Context, w io.Writer) error {
-	cmd := exec.CommandContext(ctx, "mongodump",
-		"--uri="+d.connString,
+	args := []string{
+		"--uri=" + d.connString,
 		"--archive",
-	)
+	}
+	if len(d.extraArgs) > 0 {
+		args = append(args, d.extraArgs...)
+	}
+	cmd := exec.CommandContext(ctx, "mongodump", args...)
 	cmd.Stdout = w
 	cmd.Stderr = io.Discard
 
@@ -36,10 +41,11 @@ func (d *MongoDBDumper) Dump(ctx context.Context, w io.Writer) error {
 
 type MongoDBRestorer struct {
 	connString string
+	extraArgs  []string
 }
 
-func NewMongoDBRestorer(connString string) *MongoDBRestorer {
-	return &MongoDBRestorer{connString: connString}
+func NewMongoDBRestorer(connString string, extraArgs []string) *MongoDBRestorer {
+	return &MongoDBRestorer{connString: connString, extraArgs: extraArgs}
 }
 
 func (r *MongoDBRestorer) GetType() DatabaseType {
@@ -47,10 +53,14 @@ func (r *MongoDBRestorer) GetType() DatabaseType {
 }
 
 func (r *MongoDBRestorer) Restore(ctx context.Context, reader io.Reader) error {
-	cmd := exec.CommandContext(ctx, "mongorestore",
-		"--uri="+r.connString,
+	args := []string{
+		"--uri=" + r.connString,
 		"--archive",
-	)
+	}
+	if len(r.extraArgs) > 0 {
+		args = append(args, r.extraArgs...)
+	}
+	cmd := exec.CommandContext(ctx, "mongorestore", args...)
 	cmd.Stdin = reader
 	cmd.Stderr = io.Discard
 

@@ -12,10 +12,11 @@ import (
 
 type MySQLDumper struct {
 	connString string
+	extraArgs  []string
 }
 
-func NewMySQLDumper(connString string) *MySQLDumper {
-	return &MySQLDumper{connString: connString}
+func NewMySQLDumper(connString string, extraArgs []string) *MySQLDumper {
+	return &MySQLDumper{connString: connString, extraArgs: extraArgs}
 }
 
 func (d *MySQLDumper) GetType() DatabaseType {
@@ -23,12 +24,16 @@ func (d *MySQLDumper) GetType() DatabaseType {
 }
 
 func (d *MySQLDumper) Dump(ctx context.Context, w io.Writer) error {
-	cmd := exec.CommandContext(ctx, "mysqldump",
-		"--defaults-extra-file="+createMySQLConfigFile(d.connString),
+	args := []string{
+		"--defaults-extra-file=" + createMySQLConfigFile(d.connString),
 		"--single-transaction",
 		"--quick",
 		"--compress",
-	)
+	}
+	if len(d.extraArgs) > 0 {
+		args = append(args, d.extraArgs...)
+	}
+	cmd := exec.CommandContext(ctx, "mysqldump", args...)
 	cmd.Stdout = w
 	cmd.Stderr = io.Discard
 
@@ -41,10 +46,11 @@ func (d *MySQLDumper) Dump(ctx context.Context, w io.Writer) error {
 
 type MySQLRestorer struct {
 	connString string
+	extraArgs  []string
 }
 
-func NewMySQLRestorer(connString string) *MySQLRestorer {
-	return &MySQLRestorer{connString: connString}
+func NewMySQLRestorer(connString string, extraArgs []string) *MySQLRestorer {
+	return &MySQLRestorer{connString: connString, extraArgs: extraArgs}
 }
 
 func (r *MySQLRestorer) GetType() DatabaseType {
@@ -52,9 +58,13 @@ func (r *MySQLRestorer) GetType() DatabaseType {
 }
 
 func (r *MySQLRestorer) Restore(ctx context.Context, reader io.Reader) error {
-	cmd := exec.CommandContext(ctx, "mysql",
-		"--defaults-extra-file="+createMySQLConfigFile(r.connString),
-	)
+	args := []string{
+		"--defaults-extra-file=" + createMySQLConfigFile(r.connString),
+	}
+	if len(r.extraArgs) > 0 {
+		args = append(args, r.extraArgs...)
+	}
+	cmd := exec.CommandContext(ctx, "mysql", args...)
 	cmd.Stdin = reader
 	cmd.Stderr = io.Discard
 

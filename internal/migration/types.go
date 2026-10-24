@@ -26,30 +26,30 @@ type Restorer interface {
 	GetType() DatabaseType
 }
 
-func CreateDumper(dbType string, connStr string, useStdOut bool) (Dumper, error) {
+func CreateDumper(dbType string, connStr string, useStdOut bool, extraArgs []string) (Dumper, error) {
 	switch DatabaseType(dbType) {
 	case Postgres:
 		// Use custom format when not in stdout mode -- better for large databases
 		// Use plain format when in stdout mode -- better for readability
 		useCustomFormat := !useStdOut
-		return NewPostgresDumper(connStr, useCustomFormat), nil
+		return NewPostgresDumper(connStr, useCustomFormat, extraArgs), nil
 	case MySQL:
-		return NewMySQLDumper(connStr), nil
+		return NewMySQLDumper(connStr, extraArgs), nil
 	case MongoDB:
-		return NewMongoDBDumper(connStr), nil
+		return NewMongoDBDumper(connStr, extraArgs), nil
 	default:
 		return nil, fmt.Errorf("unsupported source database type: %s", dbType)
 	}
 }
 
-func CreateRestorer(dbType string, connStr string) (Restorer, error) {
+func CreateRestorer(dbType string, connStr string, extraArgs []string) (Restorer, error) {
 	switch DatabaseType(dbType) {
 	case Postgres:
-		return NewPostgresRestorer(connStr), nil
+		return NewPostgresRestorer(connStr, extraArgs), nil
 	case MySQL:
-		return NewMySQLRestorer(connStr), nil
+		return NewMySQLRestorer(connStr, extraArgs), nil
 	case MongoDB:
-		return NewMongoDBRestorer(connStr), nil
+		return NewMongoDBRestorer(connStr, extraArgs), nil
 	default:
 		return nil, fmt.Errorf("unsupported target database type: %s", dbType)
 	}

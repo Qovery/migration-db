@@ -71,6 +71,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&cfg.SkipVerification, "skip-verify", false, "Skip verification after migration")
 	rootCmd.PersistentFlags().IntVar(&cfg.VerifyChunkSize, "verify-chunk-size", 10*1024*1024, "Chunk size in bytes for verification streaming")
 	rootCmd.PersistentFlags().BoolVar(&cfg.SkipTLSVerify, "skip-tls-verify", false, "Skip TLS certificate verification when testing connections")
+	// allow passing custom dumper args (repeatable) for the selected database type
+	rootCmd.PersistentFlags().StringArrayVar(&cfg.DumpArgs, "dump-arg", nil, "Additional dump argument(s) passed to the underlying dumper (pg_dump, mysqldump, mongodump). Repeat flag to add multiple, e.g., --dump-arg=--schema=public")
+	// allow passing custom restorer args (repeatable) for the selected database type
+	rootCmd.PersistentFlags().StringArrayVar(&cfg.RestoreArgs, "restore-arg", nil, "Additional restore argument(s) passed to the underlying restorer (pg_restore, mysql, mongorestore). Repeat flag to add multiple, e.g., --restore-arg=--schema=public")
 
 	// Mark required flags
 	_ = rootCmd.MarkPersistentFlagRequired("source")
@@ -195,8 +199,8 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	// Create verifier
 	logger.Info("Starting verification...")
 
-	sourceDumper, err := migration.CreateDumper(cfg.SourceType, cfg.SourceConn, cfg.StdoutMode)
-	targetDumper, err := migration.CreateDumper(cfg.TargetType, cfg.TargetConn, cfg.StdoutMode)
+	sourceDumper, err := migration.CreateDumper(cfg.SourceType, cfg.SourceConn, cfg.StdoutMode, cfg.DumpArgs)
+	targetDumper, err := migration.CreateDumper(cfg.TargetType, cfg.TargetConn, cfg.StdoutMode, cfg.DumpArgs)
 
 	if err != nil {
 		return fmt.Errorf("failed to create dumper: %w", err)
